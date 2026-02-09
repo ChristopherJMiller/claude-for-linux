@@ -225,5 +225,20 @@ class ClaudeNativeLinux {
   }
 }
 
-// Export singleton instance
-module.exports = new ClaudeNativeLinux();
+// AuthRequest stub - returns isAvailable()=false so the app falls back to
+// system browser auth instead of macOS ASWebAuthenticationSession
+class AuthRequest {
+  static isAvailable() {
+    return false;
+  }
+  start() {
+    return Promise.reject(new Error('AuthRequest not available on Linux'));
+  }
+  cancel() {}
+}
+
+// Export singleton instance with AuthRequest as a static property
+const instance = new ClaudeNativeLinux();
+instance.AuthRequest = AuthRequest;
+instance.getActiveWindowHandle = () => null;
+module.exports = instance;
