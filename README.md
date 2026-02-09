@@ -61,6 +61,7 @@ The `scripts/` directory contains older Ubuntu-specific scripts for Claude Deskt
 
 ## What Works
 
+- **Sign-in** via Google OAuth / SSO (opens system browser, returns via deep link)
 - **Native Wayland** support (not XWayland) via `--ozone-platform-hint=auto`
 - **HiDPI scaling** (sharp rendering)
 - **Window decorations** with titlebar overlay
@@ -78,14 +79,15 @@ macOS DMG (fetchurl)
        |
   asar_tool.py extract -> raw JS
        |
-  7 patches:
-    00: Native module stub (@ant/claude-native)
+  8 patches:
+    00: Native module stub (@ant/claude-native + AuthRequest)
     01: Cowork module loader (claude-cowork-linux)
     02: Platform flag (route Linux through TypeScript VM path)
     03: Availability check (NH() returns supported)
     04: Skip bundle download (TCe() short-circuit)
     05: VM start intercept (ppt() -> bubblewrap session)
     06: VM getter override (Ai() + fwe())
+    07: Platform branding ("for Linux" in UI)
        |
   asar_tool.py pack -> patched app.asar
        |
@@ -109,7 +111,8 @@ macOS DMG (fetchurl)
 │   │   ├── 03-availability-check.js
 │   │   ├── 04-skip-download.js
 │   │   ├── 05-vm-start-intercept.js
-│   │   └── 06-vm-getter.js
+│   │   ├── 06-vm-getter.js
+│   │   └── 07-platform-branding.js
 │   ├── patch-cowork-*.js             # Legacy patches for v1.1.1200
 │   └── install-*.sh                  # Legacy Ubuntu install scripts
 ├── tools/
