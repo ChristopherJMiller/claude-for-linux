@@ -9,9 +9,9 @@
   outputs = { self, nixpkgs, flake-utils }:
     let
       # Claude Desktop version and source
-      claudeVersion = "1.1.2321";
-      claudeDmgHash = "sha256-OcgyvDxok2UR6+mqOe25dhJcGuW4s/FshM95gjGu96M=";
-      claudeDmgUrl = "https://downloads.claude.ai/releases/darwin/universal/${claudeVersion}/Claude-495628f91fbfa276fabd6da835ba226fdf5ec68e.dmg";
+      claudeVersion = "1.1.2512";
+      claudeDmgHash = "sha256-g0S46fq7GlYU13xdH2EUSmShVbR9O2CGy0Zd+SF0Rew=";
+      claudeDmgUrl = "https://downloads.claude.ai/releases/darwin/universal/${claudeVersion}/Claude-4d27082e7ea0c9cd9a59e334497a9ca397025cc5.dmg";
 
       supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
 
@@ -140,21 +140,21 @@
               cp source-modules/*.js source-root/modules/
 
               # Base: Install native module stub
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/00-native-module-stub.js} extracted source-root
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/00-native-module-stub.js} extracted source-root
 
               # Cowork: Install module and apply patches (in order)
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/01-cowork-module-loader.js} extracted source-root
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/02-platform-flag.js} extracted
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/03-availability-check.js} extracted
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/04-skip-download.js} extracted
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/05-vm-start-intercept.js} extracted
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/06-vm-getter.js} extracted
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/01-cowork-module-loader.js} extracted source-root
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/02-platform-flag.js} extracted
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/03-availability-check.js} extracted
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/04-skip-download.js} extracted
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/05-vm-start-intercept.js} extracted
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/06-vm-getter.js} extracted
 
               # Branding: Replace "for Windows"/"for Mac" with "for Linux" in UI
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/07-platform-branding.js} extracted
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/07-platform-branding.js} extracted
 
               # Tray: Use theme-aware PNGs on Linux instead of Windows ICOs
-              ${pkgs.nodejs}/bin/node ${./scripts/patches-2321/08-tray-icon-linux.js} extracted
+              ${pkgs.nodejs}/bin/node ${./scripts/patches-2512/08-tray-icon-linux.js} extracted
 
               # Clean up backup files before repacking
               find extracted -name "*.backup" -o -name "*-backup" | xargs rm -f 2>/dev/null || true
