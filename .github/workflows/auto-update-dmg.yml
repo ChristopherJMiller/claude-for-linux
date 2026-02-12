@@ -42,16 +42,37 @@ jobs:
           url_pattern='https://downloads\.claude\.ai/releases/darwin/universal/[0-9]+\.[0-9]+\.[0-9]+/[^[:space:]"'"'"']+'
           latest_url=""
           for attempt in 1 2 3; do
+            echo "--- Attempt $attempt ---"
+
             # Strategy 1: Parse Location header from 307 redirect
             if [ -z "$latest_url" ]; then
-              headers=$(curl -s -o /dev/null -D - --max-time 15 -A "$UA" "$REDIRECT_URL" 2>/dev/null) || true
+              echo "Strategy 1: Fetching headers with -D..."
+              headers=$(curl -s -o /dev/null -D - --max-time 15 -A "$UA" "$REDIRECT_URL" 2>&1) || true
+              echo "Response headers:"
+              echo "$headers" | head -20
               latest_url=$(echo "$headers" | grep -oP "(?i)location:\\s*\\K$url_pattern" | head -1) || true
+              echo "Strategy 1 result: '${latest_url:-empty}'"
             fi
+
             # Strategy 2: Follow redirect and capture effective URL
             if [ -z "$latest_url" ]; then
-              effective=$(curl -sL -o /dev/null -w "%{url_effective}" --max-time 15 --max-filesize 1 -A "$UA" "$REDIRECT_URL" 2>/dev/null) || true
+              echo "Strategy 2: Following redirects..."
+              effective=$(curl -sL -o /dev/null -w "%{url_effective}" --max-time 15 -A "$UA" "$REDIRECT_URL" 2>&1) || true
+              echo "Effective URL: '$effective'"
               [[ "$effective" =~ $url_pattern ]] && latest_url="$effective"
+              echo "Strategy 2 result: '${latest_url:-empty}'"
             fi
+
+            # Strategy 3: Verbose redirect trace
+            if [ -z "$latest_url" ]; then
+              echo "Strategy 3: Verbose redirect trace..."
+              redirect_info=$(curl -sI -L --max-time 15 -A "$UA" "$REDIRECT_URL" 2>&1) || true
+              echo "Full redirect trace:"
+              echo "$redirect_info" | head -40
+              latest_url=$(echo "$redirect_info" | grep -oP "(?i)location:\\s*\\K$url_pattern" | tail -1) || true
+              echo "Strategy 3 result: '${latest_url:-empty}'"
+            fi
+
             [ -n "$latest_url" ] && break
             [ "$attempt" -lt 3 ] && sleep $((attempt * 2))
           done
