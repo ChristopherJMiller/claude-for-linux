@@ -28,77 +28,16 @@ nix flake check
 nix develop
 ```
 
-## Patching Workflow (Version Updates)
+## Patching Workflow
 
-When a new Claude Desktop version is released, the auto-update CI creates a PR bumping `flake.nix` (version, hash, URL). The patches will almost certainly break because the minified JS identifiers change each release. Here's how to fix them:
+1. **Fetch DMG URL**: `curl -sI https://claude.ai/api/desktop/darwin/universal/dmg/latest/redirect | grep location`
+2. **Update hash**: `nix-prefetch-url <url>` then convert to SRI
+3. **Extract index.js**: Build with `-L` to see extraction, or use dev shell
+4. **Find patterns**: `grep -oP '.{0,50}PATTERN.{0,50}' index.js`
+5. **Update patches**: Edit `scripts/patches-3189/*.js`
+6. **Test**: `nix build . && nix run .`
 
-### 1. Extract index.js from the new DMG
-
-```bash
-# The failed nix build will cache the DMG. Find it:
-nix build . 2>&1 | grep '.dmg.drv'
-# Or extract manually:
-mkdir -p /tmp/claude-extract && cd /tmp/claude-extract
-dmg2img /nix/store/<hash>-Claude-<sha>.dmg claude.img
-mkdir -p dmg-contents && 7z x -y -odmg-contents claude.img > /dev/null 2>&1
-python3 tools/asar_tool.py extract dmg-contents/Claude/Claude.app/Contents/Resources/app.asar extracted
-```
-
-### 2. Find new minified identifiers
-
-Each patch targets specific minified function/variable names. Search for **semantic patterns** — the code logic is stable, only identifiers change.
-
-| Patch | Search strategy |
-|-------|----------------|
-| 02 | `grep -oP '\w+=process\.platform==="win32"' index.js` — find near `darwin` pair |
-| 03 | `grep -oP 'function \w+\(\)\{const t=process\.platform;if\(t!=="darwin"' index.js` |
-| 04 | `grep -oP 'async function \w+.*downloadVM' index.js` — the download guard function |
-| 05 | `grep -oP 'async function \w+\(\w,\w,\w,\w\).*\[VM:start\]' index.js` |
-| 06 | `grep -oP 'async function \w+\(\)\{const t=await \w+\(\);return\(t==null.*\.vm\)' index.js` |
-| 06b | `grep -oP 'async function \w+\(\)\{return process\.platform!=="darwin"\?null' index.js` |
-| 08 | `grep -oP 'function \w+\(\)\{return \w+\.app\.isPackaged\?\w+\.resourcesPath' index.js` |
-| 08b | `grep -oP '\w+\?\w+=\w+\.nativeTheme\.shouldUseDarkColors\?"Tray-Win32' index.js` |
-
-**Important**: Check if `Pe`/`Te` (electron/path) have swapped — they alternate between versions.
-
-### 3. Create new patches directory
-
-```bash
-mkdir scripts/patches-XXXX
-cp scripts/patches-3189/00-native-module-stub.js scripts/patches-XXXX/  # never changes
-cp scripts/patches-3189/01-cowork-module-loader.js scripts/patches-XXXX/  # never changes
-cp scripts/patches-3189/07-platform-branding.js scripts/patches-XXXX/  # never changes
-# Update 02, 03, 04, 05, 06, 08 with new identifiers
-```
-
-### 4. Update flake.nix
-
-Update all `patches-3189` references to `patches-XXXX`.
-
-### 5. Build and verify
-
-```bash
-git add scripts/patches-XXXX/  # flake needs files tracked
-nix build .                     # check for WARNING lines
-nix build .#claude-desktop-fhs  # verify FHS variant too
-```
-
-### Identifier History
-
-| Purpose | v2685 | v2998 | v3189 |
-|---------|-------|-------|-------|
-| Platform flag | `Hi` | `Li` | `Ci` |
-| Availability | `N7()` | `vz()` | `fz()` |
-| Download guard | `Qke()` | `gTe()` | `zTe()` |
-| VM start | `D0t()` | `i0t()` | `v_t()` |
-| VM getter | `Ii()` | `_i()` | `Ei()` |
-| Platform getter | `B1e()` | `Oxe()` | `aAe()` |
-| Internal getter | `F1e()` | `Rxe()` | `iAe()` |
-| Resource path | `nSt()` | `hxt()` | `RAt()` |
-| Status dispatch | `lC(Ih.X)` | `g2(pf.X)` | `x2(wf.X)` |
-| electron module | `Pe` | `Te` | `Pe` |
-| path module | `Te` | `Pe` | `Te` |
-| resources | `_a` | `Sa` | `xa` |
+See `docs/patching-architecture.md` for the full technical analysis and automation strategy.
 
 ## Patch Chain (v1.1.3189)
 

@@ -1,0 +1,197 @@
+# Patching Architecture: Analysis and Automation Strategy
+
+This document describes the current patching approach in `claude-for-linux`, compares it with the regex-based approach used by [`claude-desktop-linux-flake`](https://github.com/heytcass/claude-desktop-linux-flake), and proposes a path toward automated, version-resilient patching.
+
+## The Problem
+
+Claude Desktop ships as a macOS DMG containing minified Electron JavaScript. Each release changes minified identifier names (e.g., `Li` becomes `Ci`, `vz()` becomes `fz()`), even when the underlying logic is unchanged. The current approach uses **exact string matching** to find and patch these identifiers, which breaks on every version bump and requires manual updates.
+
+## Current Approach (This Project)
+
+### How It Works
+
+9 Node.js patch scripts in `scripts/patches-XXXX/` perform exact string find-and-replace on the extracted `index.js`:
+
+```javascript
+// Patch 02: exact match — breaks when identifier changes
+const original = 'Ci=process.platform==="win32"';
+const replacement = 'Ci=process.platform==="win32"||process.platform==="linux"';
+indexContent = indexContent.replace(original, replacement);
+```
+
+### What Each Patch Does
+
+| # | Purpose | What it modifies | Identifier-dependent? |
+|---|---------|------------------|-----------------------|
+| 00 | Native module stub | `@ant/claude-native/index.js` (whole file replacement) | No |
+| 01 | Cowork module loader | Appends to end of `index.js` | No |
+| 02 | Platform flag | `VAR=process.platform==="win32"` → add `\|\|"linux"` | **Yes** — variable name |
+| 03 | Availability check | `function NAME(){...platform..."unsupported"}` → prepend Linux return | **Yes** — function name |
+| 04 | Skip download | `async function NAME(t,e){return VAR?` → prepend Linux early-return | **Yes** — function name + guard var |
+| 05 | VM start intercept | `async function NAME(t,e,r,n){...` → prepend Linux bubblewrap session | **Yes** — function name + ~6 internal refs |
+| 06 | VM getter override | Two small functions → prepend Linux VM return | **Yes** — function names + inner call |
+| 07 | Platform branding | `mainView.js` preload injection | No |
+| 08 | Tray icon fix | Resource path function + icon filename selection | **Yes** — function name + module aliases |
+
+**6 of 9 patches are identifier-dependent** and break on every release.
+
+### Update History
+
+| Version | Identifier changes required |
+|---------|----------------------------|
+| v2685 → v2998 | `Hi→Li`, `N7→vz`, `Qke→gTe`, `D0t→i0t`, `Ii→_i`, `B1e→Oxe`, `nSt→hxt`, `Pe↔Te` swapped |
+| v2998 → v3189 | `Li→Ci`, `vz→fz`, `gTe→zTe`, `i0t→v_t`, `_i→Ei`, `Oxe→aAe`, `hxt→RAt`, `Pe↔Te` swapped back, new `yukonSilver` feature flag added to download function |
+
+Every version bump requires ~30 minutes of manual grep work to find the new names.
+
+## Alternative Approach (claude-desktop-linux-flake)
+
+The other project uses **regex-based `perl -pe` substitutions** with wildcard captures for identifiers, applied directly in the Nix build phase:
+
+```perl
+# Tray icon: captures the variable name with \w+, works regardless of what it's called
+perl -i -pe 's{:(\w)="TrayIconTemplate\.png"}{:$1=require("electron").nativeTheme.shouldUseDarkColors?"TrayIconTemplate-Dark.png":"TrayIconTemplate.png"}g'
+
+# Origin validation: \w+ matches any identifier
+perl -i -pe 's{e\.protocol==="file:"&&\w+\.app\.isPackaged===!0}{e.protocol==="file:"}g'
+
+# Title bar: captures variable names with backreferences
+perl -i -pe 's{if\(!(\w+)\s*&&\s*(\w+)\)}{if($1 && $2)}g'
+```
+
+### Key Differences
+
+| Aspect | This project (exact match) | claude-desktop-linux-flake (regex) |
+|--------|---------------------------|-------------------------------------|
+| Identifier resilience | Breaks every release | Survives if code structure is stable |
+| Pattern matching | Literal string `.includes()` | Perl regex with `\w+` wildcards |
+| Patch application | Node.js scripts | Inline `perl -pe` in Nix buildPhase |
+| Cowork/VM support | Full (patches 03-06) | None — basic app only |
+| Native bindings | JS stubs (patch 00) | Rust NAPI module (`patchy-cnb`) |
+| Scope | 9 patches, ~600 LOC | 5 inline perl commands, ~10 LOC |
+
+### What They Don't Patch
+
+`claude-desktop-linux-flake` does **not** support Cowork (the VM/sandbox feature). It only does:
+- Title bar visibility
+- Platform detection for Claude Code (`"linux-x64"`)
+- Origin validation for `file://` protocol
+- Tray icon theme selection
+- Tray stability (debouncing, DBus cleanup, window blur)
+
+The Cowork patches (03-06) are the most complex and most identifier-dependent in our project.
+
+## Identifier Discovery Patterns
+
+Even when doing manual updates, the key insight is that **each function has a stable semantic signature** that survives minification. Only the names change. Here are the grep patterns that reliably find each target across versions:
+
+```bash
+INDEX=/path/to/extracted/.vite/build/index.js
+
+# Patch 02: Platform flag — the darwin,win32 pair near a combined OR check
+grep -oP '.{0,60}process\.platform==="darwin",.{0,4}=process\.platform==="win32".{0,20}' $INDEX
+
+# Patch 03: Availability check — the function that returns {status:"unsupported"}
+grep -oP 'function \w+\(\)\{const t=process\.platform;if\(t!=="darwin"&&t!=="win32"\)return\{status:"unsupported"' $INDEX
+
+# Patch 04: Download guard — the async function near [downloadVM] log messages
+grep -oP 'async function \w+\(\w,\w\)\{.{0,200}downloadVM' $INDEX
+
+# Patch 05: VM start — 4-param async function with [VM:start] log
+grep -oP 'async function \w+\(\w,\w,\w,\w\)\{var .{0,80}\[VM:start\]' $INDEX
+
+# Patch 06a: VM getter — returns (t?.vm) ?? null
+grep -oP 'async function \w+\(\)\{const t=await \w+\(\);return\(t==null\?void 0:t\.vm\)\?\?null\}' $INDEX
+
+# Patch 06b: Platform getter — returns null for non-darwin
+grep -oP 'async function \w+\(\)\{return process\.platform!=="darwin"\?null:await \w+\(\)\}' $INDEX
+
+# Patch 08a: Resource path — returns resourcesPath or __dirname resolve
+grep -oP 'function \w+\(\)\{return \w+\.app\.isPackaged\?\w+\.resourcesPath:\w+\.resolve\(__dirname,"\.\.","\.\.","resources"\)\}' $INDEX
+
+# Patch 08b: Tray icon filename — the Win32 ICO ternary
+grep -oP '\w+\?\w+=\w+\.nativeTheme\.shouldUseDarkColors\?"Tray-Win32-Dark\.ico":"Tray-Win32\.ico":\w+="TrayIconTemplate\.png"' $INDEX
+```
+
+These patterns have been stable across v2685, v2998, and v3189.
+
+## Toward Automated Patching
+
+### Option A: Convert to Regex-Based Patching
+
+Replace the 6 identifier-dependent Node.js patches with `perl -pe` substitutions in the Nix build phase, using `\w+` wildcards for identifiers. This is what `claude-desktop-linux-flake` does for its simpler patches.
+
+**Feasibility for each patch:**
+
+| Patch | Regex conversion difficulty | Notes |
+|-------|----------------------------|-------|
+| 02 (platform flag) | Easy | `s{(\w+)=process\.platform==="win32"(,\w+=\w+\|\|\w+)}{$1=process.platform==="win32"\|\|process.platform==="linux"$2}` — match the darwin/win32 pair context |
+| 03 (availability) | Easy | Prepend Linux return before the platform check |
+| 04 (skip download) | Medium | Function structure changed between versions (new feature flag); regex must be loose enough |
+| 05 (VM start) | Hard | 100+ line replacement including bubblewrap session setup; regex can't insert new code blocks easily |
+| 06 (VM getter) | Easy | Two small function-level prepends |
+| 08 (tray icon) | Easy | Already demonstrated in the other project |
+
+**Problem:** Patch 05 is a **massive code injection** (~100 lines of new bubblewrap session logic). Perl regex isn't suited for inserting multi-line code blocks into minified single-line JS.
+
+### Option B: Hybrid Approach
+
+1. Convert patches 02, 03, 04, 06, 08 to regex (easy wins — resilient to identifier changes)
+2. Keep patch 05 as a **semantic injection**: use regex to find the function boundary, then inject the Linux block via a Node.js script that uses the regex-discovered function name
+
+This reduces the manual update surface from 6 patches to just 1 (patch 05), and even that one could be automated since the function is reliably findable via the `[VM:start]` log string.
+
+### Option C: Electron Preload Injection
+
+Instead of patching `index.js` at all, inject a preload script that monkey-patches the relevant modules at runtime:
+
+```javascript
+// preload.js — loaded before app code via --require
+const Module = require('module');
+const origLoad = Module._load;
+Module._load = function(request, parent) {
+  const result = origLoad.apply(this, arguments);
+  // Intercept and modify specific modules as they load
+  return result;
+};
+```
+
+This approach wouldn't need to know identifier names at all — it could intercept at the module/export level. However, Vite's bundled output doesn't use `require()` in the standard way, so this may not work for the main bundle.
+
+### Option D: AST-Based Patching
+
+Parse `index.js` into an AST (using a fast parser like `acorn` or `oxc`), find nodes by semantic structure (e.g., "a function that checks `process.platform` and returns `{status:'unsupported'}`"), and modify the tree. This is the most robust but most complex approach.
+
+**Pros:** Completely identifier-agnostic, can handle structural changes
+**Cons:** Minified JS ASTs are huge (~4.3MB source), parser must handle all edge cases, transforms are complex to write
+
+### Recommended Path
+
+**Option B (hybrid)** gives the best cost/benefit:
+
+1. Convert the 5 simple patches to `perl -pe` regex — immediate win, zero maintenance
+2. For patch 05, write a Node.js script that uses regex to discover the function name and internal identifiers dynamically, then generates the replacement string. This is essentially what the manual process does, but automated.
+3. The only remaining failure mode is if Anthropic **restructures the code logic** (not just renames identifiers), which happens rarely and would require manual review regardless.
+
+The auto-update CI could then:
+1. Bump version/hash/URL (already done)
+2. Run `nix build`
+3. If it succeeds → auto-merge
+4. If it fails → the patches need logic-level review (rare)
+
+## Appendix: Identifier History
+
+| Purpose | v2685 | v2998 | v3189 |
+|---------|-------|-------|-------|
+| Platform flag | `Hi` | `Li` | `Ci` |
+| Availability check | `N7()` | `vz()` | `fz()` |
+| Download guard | `Qke()` | `gTe()` | `zTe()` |
+| VM start function | `D0t()` | `i0t()` | `v_t()` |
+| VM getter | `Ii()` | `_i()` | `Ei()` |
+| Platform getter | `B1e()` | `Oxe()` | `aAe()` |
+| Internal getter | `F1e()` | `Rxe()` | `iAe()` |
+| Resource path | `nSt()` | `hxt()` | `RAt()` |
+| Status dispatch | `lC(Ih.X)` | `g2(pf.X)` | `x2(wf.X)` |
+| electron module | `Pe` | `Te` | `Pe` |
+| path module | `Te` | `Pe` | `Te` |
+| resources var | `_a` | `Sa` | `xa` |
