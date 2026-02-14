@@ -1,33 +1,4 @@
-#!/usr/bin/env node
-/**
- * Patch 07: Platform Branding (for Claude Desktop 1.1.2998)
- *
- * Ensures "Claude for Linux" is displayed instead of "Claude for Windows" or
- * "Claude for Mac" in all windows. The about window renderer already handles
- * Linux correctly via process.platform, but the claude.ai web content loaded
- * in the main view may show incorrect platform branding. This patch injects
- * a DOM observer into the mainView preload to fix it.
- */
 
-const fs = require('fs');
-const path = require('path');
-
-const extractedDir = process.argv[2];
-if (!extractedDir) {
-  console.error('Usage: node 07-platform-branding.js <extracted-app-dir>');
-  process.exit(1);
-}
-
-const mainViewPreload = path.join(extractedDir, '.vite', 'build', 'mainView.js');
-
-if (!fs.existsSync(mainViewPreload)) {
-  console.error(`mainView.js not found at: ${mainViewPreload}`);
-  process.exit(1);
-}
-
-// Inject a platform branding fix into the mainView preload.
-// This runs in the preload context with contextIsolation, but still has DOM access.
-const brandingFix = `
 ;(function() {
   if (process.platform !== "linux") return;
   function fixPlatformText(node) {
@@ -75,18 +46,3 @@ const brandingFix = `
   }
   window.addEventListener("load", scanDocument);
 })();
-`;
-
-let content = fs.readFileSync(mainViewPreload, 'utf8');
-
-// Check if already patched
-if (content.includes('fixPlatformText')) {
-  console.log('[07-platform-branding] Already patched, skipping');
-  process.exit(0);
-}
-
-content += brandingFix;
-fs.writeFileSync(mainViewPreload, content, 'utf8');
-
-console.log('[07-platform-branding] Injected platform branding fix into mainView.js');
-console.log('[07-platform-branding] "for Windows"/"for Mac" text will be replaced with "for Linux"');
