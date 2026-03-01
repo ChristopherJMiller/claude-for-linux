@@ -157,15 +157,15 @@
               # --- Patch 02: Platform flag (regex) ---
               # Makes the Windows platform flag also true on Linux, routing through TS VM path
               echo "[patch:02] Patching platform flag..."
-              perl -i -pe 's{(\w+=process\.platform==="darwin",)(\w+)(=process\.platform==="win32")}{$1$2$3||process.platform==="linux"}g' "$INDEX"
-              grep -qP '\w+=process\.platform==="win32"\|\|process\.platform==="linux"' "$INDEX" \
+              perl -i -pe 's{([\w$]+=process\.platform==="darwin",)([\w$]+)(=process\.platform==="win32")}{$1$2$3||process.platform==="linux"}g' "$INDEX"
+              grep -qP '[\w$]+=process\.platform==="win32"\|\|process\.platform==="linux"' "$INDEX" \
                 || { echo "ERROR: patch 02 (platform flag) failed to apply"; exit 1; }
               echo "[patch:02] Done"
 
               # --- Patch 03: Availability check (regex) ---
               # Prepends Linux "supported" return before the platform check
               echo "[patch:03] Patching availability check..."
-              perl -i -pe 's{(function )(\w+)(\(\)\{)(const t=process\.platform;if\(t!=="darwin"&&t!=="win32"\)return\{status:"unsupported")}{$1$2$3if(process.platform==="linux"\&\&global.__linuxCowork)return\{status:"supported"\};$4}g' "$INDEX"
+              perl -i -pe 's{(function )([\w$]+)(\(\)\{)(const t=process\.platform;if\(t!=="darwin"&&t!=="win32"\)return\{status:"unsupported")}{$1$2$3if(process.platform==="linux"\&\&global.__linuxCowork)return\{status:"supported"\};$4}g' "$INDEX"
               grep -qP 'if\(process\.platform==="linux"&&global\.__linuxCowork\)return\{status:"supported"\}' "$INDEX" \
                 || { echo "ERROR: patch 03 (availability check) failed to apply"; exit 1; }
               echo "[patch:03] Done"
@@ -173,8 +173,8 @@
               # --- Patch 04: Skip download (regex) ---
               # Skips macOS VM bundle download on Linux
               echo "[patch:04] Patching download skip..."
-              perl -i -pe 's{(async function \w+\(t,e\)\{)(.{0,200}?\[downloadVM\])}{$1if(process.platform==="linux"\&\&global.__linuxCowork){console.log("[Cowork Linux] Skipping bundle download");return!1}$2}g' "$INDEX"
-              grep -qP 'async function \w+\(t,e\)\{if\(process\.platform==="linux"' "$INDEX" \
+              perl -i -pe 's{(async function [\w$]+\(t,e\)\{)(.{0,200}?\[downloadVM\])}{$1if(process.platform==="linux"\&\&global.__linuxCowork){console.log("[Cowork Linux] Skipping bundle download");return!1}$2}g' "$INDEX"
+              grep -qP 'async function [\w$]+\(t,e\)\{if\(process\.platform==="linux"' "$INDEX" \
                 || { echo "ERROR: patch 04 (skip download) failed to apply"; exit 1; }
               echo "[patch:04] Done"
 
@@ -187,15 +187,15 @@
               # --- Patch 06a: VM getter (regex) ---
               # Returns Linux VM instance from getter function
               echo "[patch:06a] Patching VM getter..."
-              perl -i -pe 's{(async function )(\w+)(\(\)\{)(const \w+=await \w+\(\);return\(\w+==null\?void 0:\w+\.vm\)\?\?null)}{$1$2$3if(process.platform==="linux"\&\&global.__linuxCowork\&\&global.__linuxCowork.vmInstance){console.log("[Cowork Linux] $2() returning Linux VM");return global.__linuxCowork.vmInstance}$4}g' "$INDEX"
-              grep -qP '\[Cowork Linux\] \w+\(\) returning Linux VM' "$INDEX" \
+              perl -i -pe 's{(async function )([\w$]+)(\(\)\{)(const [\w$]+=await [\w$]+\(\);return\([\w$]+==null\?void 0:[\w$]+\.vm\)\?\?null)}{$1$2$3if(process.platform==="linux"\&\&global.__linuxCowork\&\&global.__linuxCowork.vmInstance){console.log("[Cowork Linux] $2() returning Linux VM");return global.__linuxCowork.vmInstance}$4}g' "$INDEX"
+              grep -qP '\[Cowork Linux\] [\w$]+\(\) returning Linux VM' "$INDEX" \
                 || { echo "ERROR: patch 06a (VM getter) failed to apply"; exit 1; }
               echo "[patch:06a] Done"
 
               # --- Patch 06b: Platform getter (regex) ---
               # Don't return null for Linux in platform-gated getter
               echo "[patch:06b] Patching platform getter..."
-              perl -i -pe 's{(async function \w+\(\)\{return )process\.platform!=="darwin"\?null(:await \w+\(\))}{''${1}process.platform!=="darwin"\&\&process.platform!=="linux"?null''${2}}g' "$INDEX"
+              perl -i -pe 's{(async function [\w$]+\(\)\{return )process\.platform!=="darwin"\?null(:await [\w$]+\(\))}{''${1}process.platform!=="darwin"\&\&process.platform!=="linux"?null''${2}}g' "$INDEX"
               grep -qP 'process\.platform!=="darwin"&&process\.platform!=="linux"\?null' "$INDEX" \
                 || { echo "ERROR: patch 06b (platform getter) failed to apply"; exit 1; }
               echo "[patch:06b] Done"
@@ -208,15 +208,15 @@
               # --- Patch 08a: Tray icon resource path (regex) ---
               # Returns real filesystem path on Linux (COSMIC SNI can't read from ASAR)
               echo "[patch:08a] Patching tray icon resource path..."
-              perl -i -pe 's{function (\w+)\(\)\{return (\w+)\.app\.isPackaged\?(\w+)\.resourcesPath:(\w+)\.resolve\(__dirname,"\.\.","\.\.","resources"\)\}}{function $1(){return process.platform==="linux"?$4.join($4.dirname($2.app.getAppPath()),"resources"):$2.app.isPackaged?$3.resourcesPath:$4.resolve(__dirname,"..","..","resources")}}g' "$INDEX"
-              grep -qP 'process\.platform==="linux"\?\w+\.join\(\w+\.dirname\(' "$INDEX" \
+              perl -i -pe 's{function ([\w$]+)\(\)\{return ([\w$]+)\.app\.isPackaged\?([\w$]+)\.resourcesPath:([\w$]+)\.resolve\(__dirname,"\.\.","\.\.","resources"\)\}}{function $1(){return process.platform==="linux"?$4.join($4.dirname($2.app.getAppPath()),"resources"):$2.app.isPackaged?$3.resourcesPath:$4.resolve(__dirname,"..","..","resources")}}g' "$INDEX"
+              grep -qP 'process\.platform==="linux"\?[\w$]+\.join\([\w$]+\.dirname\(' "$INDEX" \
                 || { echo "ERROR: patch 08a (tray icon path) failed to apply"; exit 1; }
               echo "[patch:08a] Done"
 
               # --- Patch 08b: Tray icon filename (regex) ---
               # Linux uses theme-aware PNGs instead of Windows ICOs
               echo "[patch:08b] Patching tray icon filename selection..."
-              perl -i -pe 's{(\w+)\?(\w+)=(\w+)\.nativeTheme\.shouldUseDarkColors\?"Tray-Win32-Dark\.ico":"Tray-Win32\.ico":(\w+)="TrayIconTemplate\.png"}{process.platform==="linux"?($2=$3.nativeTheme.shouldUseDarkColors?"TrayIconTemplate-Dark.png":"TrayIconTemplate.png"):$1?$2=$3.nativeTheme.shouldUseDarkColors?"Tray-Win32-Dark.ico":"Tray-Win32.ico":$4="TrayIconTemplate.png"}g' "$INDEX"
+              perl -i -pe 's{([\w$]+)\?([\w$]+)=([\w$]+)\.nativeTheme\.shouldUseDarkColors\?"Tray-Win32-Dark\.ico":"Tray-Win32\.ico":([\w$]+)="TrayIconTemplate\.png"}{process.platform==="linux"?($2=$3.nativeTheme.shouldUseDarkColors?"TrayIconTemplate-Dark.png":"TrayIconTemplate.png"):$1?$2=$3.nativeTheme.shouldUseDarkColors?"Tray-Win32-Dark.ico":"Tray-Win32.ico":$4="TrayIconTemplate.png"}g' "$INDEX"
               grep -qP 'process\.platform==="linux"\?\(' "$INDEX" \
                 || { echo "ERROR: patch 08b (tray icon filename) failed to apply"; exit 1; }
               echo "[patch:08b] Done"
@@ -224,7 +224,7 @@
               # --- Patch 09: DBus tray cleanup delay (regex) ---
               # Prevents StatusNotifierItem registration race on Linux
               echo "[patch:09] Patching tray DBus cleanup delay..."
-              perl -i -pe 's{(\w+)&&\(\1\.destroy\(\),\1=null\)}{$1&&($1.destroy(),$1=null,await new Promise(r=>setTimeout(r,250)))}g' "$INDEX"
+              perl -i -pe 's{([\w$]+)&&\(\1\.destroy\(\),\1=null\)}{$1&&($1.destroy(),$1=null,await new Promise(r=>setTimeout(r,250)))}g' "$INDEX"
               echo "[patch:09] Done"
 
               # Repack ASAR
