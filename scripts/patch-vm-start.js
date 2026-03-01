@@ -19,8 +19,9 @@ console.log('=== Dynamic Patch: VM Start Intercept ===\n');
 let content = fs.readFileSync(INDEX_JS_PATH, 'utf8');
 
 // Discover function signature by matching the stable pattern:
-// async function WORD(WORD,WORD,WORD,WORD){var WORD,...;const WORD=WORD(),...WORD=WORD();WORD.info(`[VM:start]
-const sigRegex = /async function (\w+)\((\w+),(\w+),(\w+),(\w+)\)\{(var \w+(?:,\w+)*;const \w+=\w+\(\),\w+=Date\.now\(\),\w+=new \w+,\w+=\w+\(\);\w+\.info\(`\[VM:start\])/;
+// async function WORD(WORD,WORD,WORD,WORD){var WORD,...;const WORD=WORD(),WORD=Date.now(),WORD=new WORD,WORD=WORD();...WORD.info(`[VM:start]
+// The regex allows extra statements (e.g. function calls) between WORD() and WORD.info
+const sigRegex = /async function (\w+)\((\w+),(\w+),(\w+),(\w+)\)\{(var [\w,_]+;const \w+=\w+\(\),\w+=Date\.now\(\),\w+=new \w+,\w+=\w+\(\);[^}]*?\w+\.info\(`\[VM:start\])/;
 const sigMatch = content.match(sigRegex);
 
 if (!sigMatch) {
@@ -34,8 +35,9 @@ const originalBody = sigMatch[6];
 
 console.log(`  Found VM start function: ${funcName}(${params.join(',')})`);
 
-// Discover status dispatch: WORD(WORD.Ready) near lam_vm_startup_completed
-const statusRegex = /(\w+)\((\w+)\.Ready\),\w+\("lam_vm_startup_completed"/;
+// Discover status dispatch: IDENT(IDENT.Ready) near lam_vm_startup_completed
+// Note: [\w$]+ is used instead of \w+ because minified JS identifiers can contain $
+const statusRegex = /([\w$]+)\(([\w$]+)\.Ready\),[\w$]+\("lam_vm_startup_completed"/;
 const statusMatch = content.match(statusRegex);
 
 let statusDispatch = 'console.log("[Cowork Linux] Ready")';
@@ -43,7 +45,20 @@ if (statusMatch) {
   statusDispatch = `${statusMatch[1]}(${statusMatch[2]}.Ready)`;
   console.log(`  Found status dispatch: ${statusDispatch}`);
 } else {
-  console.log('  WARNING: Could not find status dispatch, using console.log fallback');
+  // Broader search: find IDENT(IDENT.Ready) near lam_vm_startup_completed
+  const idx = content.indexOf('lam_vm_startup_completed');
+  if (idx >= 0) {
+    const nearby = content.substring(Math.max(0, idx - 200), idx);
+    const broadMatch = nearby.match(/([\w$]+)\(([\w$]+)\.Ready\)/);
+    if (broadMatch) {
+      statusDispatch = `${broadMatch[1]}(${broadMatch[2]}.Ready)`;
+      console.log(`  Found status dispatch (broad search): ${statusDispatch}`);
+    } else {
+      console.log('  WARNING: Could not find status dispatch, using console.log fallback');
+    }
+  } else {
+    console.log('  WARNING: Could not find status dispatch, using console.log fallback');
+  }
 }
 
 // Build the injection block
